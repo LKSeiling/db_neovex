@@ -77,6 +77,6 @@ def clean_table_cols(df, check_string=True):
             df.rename(columns={col: new_column_name}, inplace=True)
     return df
 
-def add_to_log(logname, error_message):
+def add_to_log(logname, log_mgs):
     with open(f"./logs/{logname}.log", "a") as log_file:
-        log_file.write(str(error_message))
+        log_file.write(log_mgs)

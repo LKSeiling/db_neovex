@@ -58,8 +58,8 @@ def create_content_table(cursor, connection):
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (content_id, platform),
-        CONSTRAINT fk_label_liwc FOREIGN KEY (label_liwc) REFERENCES labels_liwc(id),
-        CONSTRAINT fk_label_consp FOREIGN KEY (label_consp) REFERENCES labels_consp(id)
+        CONSTRAINT fk_label_liwc FOREIGN KEY (label_liwc) REFERENCES labels_liwc(id) ON DELETE CASCADE,
+        CONSTRAINT fk_label_consp FOREIGN KEY (label_consp) REFERENCES labels_consp(id) ON DELETE CASCADE
         );"""
         create_table(SQL_STATEMENT, cursor)
         connection.commit()
@@ -177,7 +177,7 @@ def create_legacy_table(cursor, connection):
         id BIGSERIAL PRIMARY KEY,
         meta TEXT,
         terms TEXT,
-        author VARCHAR(255),
+        author TEXT,
         url TEXT UNIQUE,
         article_id VARCHAR(50) NOT NULL UNIQUE,
         section TEXT

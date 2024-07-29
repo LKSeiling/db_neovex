@@ -38,29 +38,35 @@ def fill_content(input_data, cursor):
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
     """, input_data)
 
-def fill_consp_label(cursor, row):
+def fill_consp_label(cursor, connection, row):
     label_consp_id = None
     cursor.execute("""
     INSERT INTO labels_consp (V1_bin, V1_prob, V2_GR_bin, V2_GR_prob, V2_NWO_bin, V2_NWO_prob)
     VALUES (%s, %s, %s, %s, %s, %s)
     RETURNING id;
-    """, (bool(row['label_pred']), row['label_pred_probability'],
-            bool(row['label_GR']), row['label_GR_probability'],
-            bool(row['v2_NWO']), row['label_NWO_probability']))
+    """,
+    (bool(row['label_pred']), row['label_pred_probability'],
+    bool(row['label_GR']), row['label_GR_probability'],
+    bool(row['v2_NWO']), row['label_NWO_probability']))
     label_consp_id = cursor.fetchone()[0]
+    connection.commit()
+
     return label_consp_id
 
-def fill_liwc_label(cursor, row):
+def fill_liwc_label(cursor, connection, row):
     label_liwc_id = None
     if pd.notna(row['Segment']):
         cursor.execute("""
         INSERT INTO labels_liwc (BigWords, Segment, WC, allnone, cause, certitude, cogproc, differ, discrep, emo_anger, emo_anx, emo_neg, emo_pos, emo_sad, emotion, insight, prep, tentat)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id;
-        """, (row['BigWords'], row['Segment'], row['WC'], row['allnone'], row['cause'], row['certitude'],
-                row['cogproc'], row['differ'], row['discrep'], row['emo_anger'], row['emo_anx'], row['emo_neg'],
-                row['emo_pos'], row['emo_sad'], row['emotion'], row['insight'], row['prep'], row['tentat']))
+        """,
+        (row['BigWords'], row['Segment'], row['WC'], row['allnone'], row['cause'], row['certitude'],
+        row['cogproc'], row['differ'], row['discrep'], row['emo_anger'], row['emo_anx'], row['emo_neg'],
+        row['emo_pos'], row['emo_sad'], row['emotion'], row['insight'], row['prep'], row['tentat']))
         label_liwc_id = cursor.fetchone()[0]
+        connection.commit()
+
     return label_liwc_id
 
 def fill_altnews(cursor, connection):  
@@ -85,33 +91,34 @@ def fill_altnews(cursor, connection):
         write_df = pd.merge(prepped_df, liwc_red, on='url', how="left")
         
         for index, row in write_df.iterrows():
-            author = row['author'] if "author" in row else None
-            timestamp = row['timestamp'] if "timestamp" in row else None
-            try:
-                cursor.execute("""
-                INSERT INTO alt_news (url, author)
-                VALUES (%s, %s)
-                RETURNING id;
-                """, (row['url'], author))
-                alt_news_id = cursor.fetchone()[0]
-                label_consp_id = fill_consp_label(cursor, row)
-                label_liwc_id = fill_liwc_label(cursor, row)
-                
-                connection.commit()
-                content_data.append((row['date'], timestamp, row['text'], row['title'], row["text_prep"], 'alt_news', subplatform, language, 
-                                     alt_news_id, label_liwc_id, label_consp_id))
+            if not pd.isna(row['date']):
+                author = row['author'] if "author" in row else None
+                timestamp = row['timestamp'] if "timestamp" in row else None
+                try:
+                    cursor.execute("""
+                    INSERT INTO alt_news (url, author)
+                    VALUES (%s, %s)
+                    RETURNING id;
+                    """, (row['url'], author))
+                    alt_news_id = cursor.fetchone()[0]
+                    connection.commit()
 
-            except Exception as e:
-                connection.rollback()  # Roll back on error
-                add_to_log("alt_news", e)
+                    label_consp_id = fill_consp_label(cursor, connection, row)
+                    label_liwc_id = fill_liwc_label(cursor, connection, row)
+                    content_data.append((row['date'], timestamp, row['text'], row['title'], row["text_prep"], 'alt_news', subplatform, language, 
+                                        alt_news_id, label_liwc_id, label_consp_id))
+
+                except Exception as e:
+                    connection.rollback()  # Roll back on error
+                    add_to_log("alt_news", "Post insertion error: {e}")
             
-        try:
-            fill_content(content_data, cursor)
-            connection.commit()
-        except Exception as e:
-                print(f"Error inserting AltNews Content: {e}")
-                add_to_log("alt_news", e)
-                connection.rollback()  # Roll back on error
+    try:
+        fill_content(content_data, cursor)
+        connection.commit()
+    except Exception as e:
+            print(f"Error inserting Alternative News Content: {e}")
+            add_to_log("alt_news", "Content insertion error: {e}")
+            connection.rollback()  # Roll back on error
 
 def fill_legnews(cursor, connection):
     
@@ -154,8 +161,8 @@ def fill_legnews(cursor, connection):
                         RETURNING id;
                         """, info_tuple_legacy)
                         alt_news_id = cursor.fetchone()[0]
-                        label_consp_id = fill_consp_label(cursor, row)
-                        label_liwc_id = fill_liwc_label(cursor, row) 
+                        label_consp_id = fill_consp_label(cursor, connection, row)
+                        label_liwc_id = fill_liwc_label(cursor, connection, row) 
                         
                         # if not faz
                         if ('ArticleID') not in row or (pd.isna(row['ArticleID'])):
@@ -169,16 +176,18 @@ def fill_legnews(cursor, connection):
                         content_data.append(info_tuple_content)
         
                     except Exception as e:
+                        print(f"Error inserting Legacy News Post: {e}")
                         connection.rollback()  # Roll back on error
-                        add_to_log("leg_news", e)
+    
+                        add_to_log("legacy_news", f"Post insertion error: {e}")
                     
-                try:
-                    fill_content(content_data, cursor)
-                    connection.commit()
-                except Exception as e:
-                        print(f"Error inserting Legacy News Content: {e}")
-                        add_to_log("leg_news", e)
-                        connection.rollback()  # Roll back on error
+    try:
+        fill_content(content_data, cursor)
+        connection.commit()
+    except Exception as e:
+            print(f"Error inserting Legacy News Content: {e}")
+            add_to_log("leg_news", f"Content insertion error: {e}")
+            connection.rollback()  # Roll back on error
 
 def fill_4chan(cursor, connection): 
     def transform_num_timestamp(timestamp):
@@ -211,24 +220,26 @@ def fill_4chan(cursor, connection):
                     RETURNING id;
                     """, (row['media_link'], row['name'], row['nreplies'], row['num'],  row['doc_id'], row['op'], row['poster_country'], row['referencing_comment'], row['searchterm'], row['subnum'], row['thread_id'], row['comments']))
                     alt_news_id = cursor.fetchone()[0]
-                    label_consp_id = fill_consp_label(cursor, row)
-                    label_liwc_id = fill_liwc_label(cursor, row) 
-                    
                     connection.commit()
+
+                    label_consp_id = fill_consp_label(cursor, connection, row)
+                    label_liwc_id = fill_liwc_label(cursor, connection, row) 
                     content_data.append((row['fourchan_date'], transform_num_timestamp(row['timestamp']), row['text.x'], row['title'], row["text_prep"], '4chan', 'pol', "eng", 
                                      alt_news_id, label_liwc_id, label_consp_id))
     
                 except Exception as e:
+                    print(f"Error inserting 4chan Post: {e}")
                     connection.rollback()  # Roll back on error
-                    add_to_log("4chan", f"Post insertion error: {e}: {row}")
+
+                    add_to_log("4chan", f"Post insertion error: {e}")
                 
-            try:
-                fill_content(content_data, cursor)
-                connection.commit()
-            except Exception as e:
-                    print(f"Error inserting 4chan Content: {e}")
-                    add_to_log("4chan", f"Content insertion error: {e}")
-                    connection.rollback()  # Roll back on error
+    try:
+        fill_content(content_data, cursor)
+        connection.commit()
+    except Exception as e:
+            print(f"Error inserting 4chan Content: {e}")
+            add_to_log("4chan", f"Content insertion error: {e}")
+            connection.rollback()  # Roll back on error
 
 def fill_reddit(cursor, connection):
     def create_reddit_url(row):
@@ -270,9 +281,10 @@ def fill_reddit(cursor, connection):
                         RETURNING id;
                         """, info_tuple_legacy)
                         alt_news_id = cursor.fetchone()[0]
-                        label_consp_id = fill_consp_label(cursor, row)
-                        label_liwc_id = fill_liwc_label(cursor, row) 
-                        
+                        connection.commit()
+
+                        label_consp_id = fill_consp_label(cursor, connection, row)
+                        label_liwc_id = fill_liwc_label(cursor, connection, row) 
                         # reddit comment
                         if row.type == "RC":
                             info_tuple_content = (row['time_utc'], row['created_utc'], row['body'], row["text_prep"], None, 'reddit', row['subreddit'], language, 
@@ -281,20 +293,21 @@ def fill_reddit(cursor, connection):
                             info_tuple_content = (row['time_utc'], row['created_utc'], row['selftext'], row["text_prep"], row['title'], 'reddit', row['subreddit'], language, 
                                                 alt_news_id, label_liwc_id, label_consp_id)
 
-                        connection.commit()
                         content_data.append(info_tuple_content)
         
                     except Exception as e:
+                        print(f"Error inserting Reddit Post: {e}")
                         connection.rollback()  # Roll back on error
-                        add_to_log("reddit", e)
+    
+                        add_to_log("reddit", f"Post insertion error: {e}")
                     
-                try:
-                    fill_content(content_data, cursor)
-                    connection.commit()
-                except Exception as e:
-                        print(f"Error inserting AltNews Content: {e}")
-                        add_to_log("reddit", e)
-                        connection.rollback()  # Roll back on error
+    try:
+        fill_content(content_data, cursor)
+        connection.commit()
+    except Exception as e:
+            print(f"Error inserting Reddit Content: {e}")
+            add_to_log("reddit", f"Content insertion error: {e}")
+            connection.rollback()  # Roll back on error
 
 def fill_twitter(cursor, connection):
     fill_twitter_users(cursor, connection)
@@ -342,25 +355,25 @@ def fill_tweets(cursor, connection):
                 RETURNING id;
                 """, (row['id'], row['refid'], row['id'], row['id'],sampled))
                 tweet_id = cursor.fetchone()[0]
-                label_consp_id = fill_consp_label(cursor, row) 
-                label_liwc_id = fill_liwc_label(cursor, row)
-                
-                
                 connection.commit()
+                
+                label_consp_id = fill_consp_label(cursor, connection, row) 
+                label_liwc_id = fill_liwc_label(cursor, connection, row)
                 content_data.append((row['time'], row['time'], row['text'], None, row["text_prep"], 'twitter', None, language, 
                                      tweet_id, label_liwc_id, label_consp_id))
 
             except Exception as e:
+                print(f"Error inserting Twitter Post: {e}")
                 connection.rollback()  # Roll back on error
-                add_to_log("twitter", e)
+                add_to_log("twitter", f"Post insertion error: {e}")
             
-        try:
-            fill_content(content_data, cursor)
-            connection.commit()
-        except Exception as e:
-                print(f"Error inserting Twitter Content: {e}")
-                add_to_log("twitter", e)
-                connection.rollback()  # Roll back on error
+    try:
+        fill_content(content_data, cursor)
+        connection.commit()
+    except Exception as e:
+            print(f"Error inserting Twitter Content: {e}")
+            add_to_log("twitter", f"Content insertion error: {e}")
+            connection.rollback()  # Roll back on error
 
 def fill_twitter_users(cursor, connection):
     tweets_path= "".join([BASE_PATH, "0_Full_Data_Classified/TwitterUsernames/"])
@@ -379,6 +392,7 @@ def fill_twitter_users(cursor, connection):
             connection.commit()
 
         except Exception as e:
-            connection.rollback()  # Roll back on error
-            print(f"Error inserting Twitter User: {e}")
-            add_to_log("twitter_user", e)
+                print(f"Error inserting Twitter User: {e}")
+                connection.rollback()  # Roll back on error
+                msg = "\n".join([f"User insertion error :{e}"])
+                add_to_log("twitter_user", f"Post insertion error: {e}")
