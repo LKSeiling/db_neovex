@@ -4,6 +4,7 @@ import sys
 import pandas as pd
 import datetime
 import pytz
+from tqdm import tqdm
 from decouple import Config, RepositoryEnv
 from .file_utils import get_valid_filepaths, get_df, add_to_log, get_encoding, clean_table_cols
 
@@ -310,8 +311,8 @@ def fill_reddit(cursor, connection):
             connection.rollback()  # Roll back on error
 
 def fill_twitter(cursor, connection):
-    print("Populating twitter users...")
-    fill_twitter_users(cursor, connection)
+#    print("Populating twitter users...")
+#    fill_twitter_users(cursor, connection)
     print("Populating tweets...")
     fill_tweets(cursor, connection)
 
@@ -337,65 +338,74 @@ def fill_tweets(cursor, connection):
     tweets_path= "".join([BASE_PATH, "0_Full_Data_Classified/TwitterTweets/"])
     all_files = get_valid_filepaths(tweets_path)
 
-    content_data = []
-    for filepath in all_files:
-        language = "ger" if re.search(regex_lang, filepath).group(1) == "ger" else "eng"
-        df = get_df(filepath)
-        clean_df = clean_table_cols(df)
-        prepped_df = preprocess_text("twitter", clean_df)
-        liwc_red = get_filtered_liwc(prepped_df, "id")
-        write_df = pd.merge(prepped_df, liwc_red, on='url', how="left")
-        
-        for index, row in write_df.iterrows():
-            author = row['author'] if "author" in row else None
-            timestamp = row['timestamp'] if "timestamp" in row else None
-            sampled = True
-            try:
-                cursor.execute("""
-                INSERT INTO twitter (tweet_id, ref, refid , author_id, sampled)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id;
-                """, (row['id'], row['refid'], row['id'], row['id'],sampled))
-                tweet_id = cursor.fetchone()[0]
-                connection.commit()
-                
-                label_consp_id = fill_consp_label(cursor, connection, row) 
-                label_liwc_id = fill_liwc_label(cursor, connection, row)
-                content_data.append((row['time'], row['time'], row['text'], None, row["text_prep"], 'twitter', None, language, 
-                                     tweet_id, label_liwc_id, label_consp_id))
-
-            except Exception as e:
-                print(f"Error inserting Twitter Post: {e}")
-                connection.rollback()  # Roll back on error
-                add_to_log("twitter", f"Post insertion error: {e}")
-            
-    try:
-        fill_content(content_data, cursor)
-        connection.commit()
-    except Exception as e:
-            print(f"Error inserting Twitter Content: {e}")
-            add_to_log("twitter", f"Content insertion error: {e}")
-            connection.rollback()  # Roll back on error
+    chunksize = 10 ** 4
+    for filepath in tqdm(all_files, total=len(all_files)):
+        enc = get_encoding(filepath)
+        try:
+            language = "ger" if re.search(regex_lang, filepath).group(1) == "ger" else "eng"
+            with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, low_memory=False) as reader:
+                for chunk in reader:
+                    content_data = []
+                    clean_chunk = clean_table_cols(chunk)
+                    prepped_chunk = preprocess_text("twitter", clean_chunk)
+                    liwc_red = get_filtered_liwc(prepped_chunk, "id")
+                    print(liwc_red)
+                    write_chunk = pd.merge(prepped_chunk, liwc_red, on='id', how="left")
+                    
+                    for index, row in write_chunk.iterrows():
+                        if not pd.isna(row['author_id']):
+                            author = row['author'] if "author" in row else None
+                            timestamp = row['timestamp'] if "timestamp" in row else None
+                            sampled = True
+                            try:
+                                cursor.execute("""
+                                INSERT INTO twitter (tweet_id, ref, refid , author_id, sampled)
+                                VALUES (%s, %s, %s, %s, %s)
+                                RETURNING id;
+                                """, (row['id'], row['refid'], row['id'], row['author_id'],sampled))
+                                tweet_id = cursor.fetchone()[0]
+                                connection.commit()
+                                
+                                label_consp_id = fill_consp_label(cursor, connection, row) 
+                                label_liwc_id = fill_liwc_label(cursor, connection, row)
+                                content_data.append((row['time'], row['time'], row['text'], None, row["text_prep"], 'twitter', None, language, 
+                                                    tweet_id, label_liwc_id, label_consp_id))
+                            except Exception as e:
+                                print(f"Error inserting Twitter Post: {e}")
+                                connection.rollback()  # Roll back on error
+                                add_to_log("twitter", f"Post insertion error: {e}")
+                    
+                    try:
+                        fill_content(content_data, cursor)
+                        connection.commit()
+                    except Exception as e:
+                            print(f"Error inserting Twitter Content: {e}")
+                            add_to_log("twitter", f"Content insertion error: {e}")
+                            connection.rollback()  # Roll back on error
+        except Exception as e:
+            print(f"Error during file handling: {e}")
+            add_to_log("twitter", f"Error during file handling: {e}")
 
 def fill_twitter_users(cursor, connection):
     tweets_path= "".join([BASE_PATH, "0_Full_Data_Classified/TwitterUsernames/"])
     all_files = get_valid_filepaths(tweets_path)
 
     for filepath in all_files:
-        df = pd.read_csv(all_files[0], header=None, index_col=0, names=['author_id','username'])
-        input_data = list(df.itertuples(index=False, name=None))
-
         try:
-            cursor.executemany("""
-            INSERT INTO twitter_user (author_id, username)
-            VALUES (%s, %s)
-            ON CONFLICT DO NOTHING;
-            """, (input_data))
+            df = pd.read_csv(all_files[0], header=None, index_col=0, names=['author_id','username'])
             
-            connection.commit()
+            for index, row in df.iterrows():
+                try:
+                    cursor.execute("""
+                    INSERT INTO twitter_user (author_id, username)
+                    VALUES (%s, %s);
+                    """, ((row['author_id'],row['username'])))
+                    
+                    connection.commit()
 
+                except Exception as e:
+                        connection.rollback()  # Roll back on error
+                        add_to_log("twitter_user", f"User insertion error: {e}")
         except Exception as e:
-                print(f"Error inserting Twitter User: {e}")
-                connection.rollback()  # Roll back on error
-                msg = "\n".join([f"User insertion error :{e}"])
-                add_to_log("twitter_user", f"Post insertion error: {e}")
+            print(f"Error during file handling: {e}")
+            add_to_log("twitter_user", f"Error during file handling: {e}")
