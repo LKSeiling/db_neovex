@@ -201,12 +201,12 @@ def fill_4chan(cursor, connection):
     liwc_df = get_df(path_liwc)
     liwc_red = liwc_df[['thread_id', 'doc_id', 'num', 'Segment', 'WC', 'BigWords', 'prep', 'allnone', 'cogproc', 'insight', 'cause', 'discrep', 'tentat', 'certitude', 'differ', 'emotion', 'emo_pos', 'emo_neg', 'emo_anx', 'emo_anger', 'emo_sad']]
 
-    content_data = []
 
     chunksize = 10 ** 4
     enc = get_encoding(filepath)
     with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, low_memory=False) as reader:
         for chunk in reader:
+            content_data = []
             # apply preprocessing to chunk
             clean_chunk = clean_table_cols(chunk, check_string=False)
             prepped_chunk = preprocess_text("4chan", clean_chunk)
@@ -233,13 +233,13 @@ def fill_4chan(cursor, connection):
 
                     add_to_log("4chan", f"Post insertion error: {e}")
                 
-    try:
-        fill_content(content_data, cursor)
-        connection.commit()
-    except Exception as e:
-            print(f"Error inserting 4chan Content: {e}")
-            add_to_log("4chan", f"Content insertion error: {e}")
-            connection.rollback()  # Roll back on error
+            try:
+                fill_content(content_data, cursor)
+                connection.commit()
+            except Exception as e:
+                    print(f"Error inserting 4chan Content: {e}")
+                    add_to_log("4chan", f"Content insertion error: {e}")
+                    connection.rollback()  # Roll back on error
 
 def fill_reddit(cursor, connection):
     def create_reddit_url(row):
@@ -310,7 +310,9 @@ def fill_reddit(cursor, connection):
             connection.rollback()  # Roll back on error
 
 def fill_twitter(cursor, connection):
+    print("Populating twitter users...")
     fill_twitter_users(cursor, connection)
+    print("Populating tweets...")
     fill_tweets(cursor, connection)
 
 def fill_tweets(cursor, connection):
@@ -386,7 +388,8 @@ def fill_twitter_users(cursor, connection):
         try:
             cursor.executemany("""
             INSERT INTO twitter_user (author_id, username)
-            VALUES (%s, %s);
+            VALUES (%s, %s)
+            ON CONFLICT DO NOTHING;
             """, (input_data))
             
             connection.commit()

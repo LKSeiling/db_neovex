@@ -5,7 +5,7 @@
 ```
 git clone git@github.com:LKSeiling/db_neovex.git
 ```
-2. Move ".env" file containing database access information into newly created directory
+2. Move ".env" file containing database access information into newly created directory (in case you want to import data, you need to adapt the BASE_PATH value in the .env file to point to the relevant base directory)
 3. Set local python environment using pyenv (in case pyenv is not installed, see [Installation Guide](https://github.com/pyenv/pyenv?tab=readme-ov-file#installation))
 ```
 pyenv virtualenv 3.10.10 neovex
