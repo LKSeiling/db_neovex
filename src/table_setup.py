@@ -42,7 +42,7 @@ def create_types(cursor, connection):
 
 def create_content_table(cursor, connection):
     try:
-        SQL_STATEMENT = """CREATE TABLE IF NOT EXISTS content (
+        SQL_STATEMENT = """ CREATE TABLE IF NOT EXISTS content (
         id BIGSERIAL PRIMARY KEY,
         date DATE NOT NULL,
         timestamp TIMESTAMP,
@@ -197,7 +197,7 @@ def create_4chan_table(cursor, connection):
         num BIGINT,
         doc_id BIGINT,
         op DOUBLE PRECISION,
-        poster_country DOUBLE PRECISION,
+        poster_country VARCHAR(5),
         referencing_comment DOUBLE PRECISION,
         searchterm TEXT,
         subnum BIGINT,

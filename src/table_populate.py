@@ -15,19 +15,22 @@ BASE_PATH = config.get('BASE_PATH')
 csv.field_size_limit(sys.maxsize)
 
 def preprocess_text(platform, df):
-    if platform == "twitter":
-        df["text_prep"] = df["text"].apply(lambda sub: re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", sub)).apply(lambda sub: re.sub(r"(^|[^@\w])@(\w{1,15})\b", "", sub)).apply(lambda x: x.strip())
-    elif platform == "4chan":
-        df["text_prep"] = df["text.x"].apply(lambda sub: re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub).replace(">","").replace("&gt;","")))
-    elif platform == "legacy":
-        def preprocess_text(sub):
-            return re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub))
-        df['text_prep'] = df.apply(lambda row: preprocess_text(row['Text']) if 'ArticleID' in row and (not pd.isna(row['ArticleID'])) else preprocess_text(row['textonly']), axis=1)
-    elif platform == "reddit":
-        def preprocess_text(sub):
-            return re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub).replace(">","").replace("&gt;",""))
-        df["text_prep"] = df.apply(lambda row: preprocess_text(row['selftext']) if row.type == "RS" else preprocess_text(row['body']), axis=1)
-    else:
+    try:
+        if platform == "twitter":
+            df["text_prep"] = df["text"].apply(lambda sub: re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", sub)).apply(lambda sub: re.sub(r"(^|[^@\w])@(\w{1,15})\b", "", sub)).apply(lambda x: x.strip())
+        elif platform == "4chan":
+            df["text_prep"] = df["text.x"].apply(lambda sub: re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub).replace(">","").replace("&gt;","")))
+        elif platform == "legacy":
+            def preprocess_text(sub):
+                return re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub))
+            df['text_prep'] = df.apply(lambda row: preprocess_text(row['Text']) if 'ArticleID' in row and (not pd.isna(row['ArticleID'])) else preprocess_text(row['textonly']), axis=1)
+        elif platform == "reddit":
+            def preprocess_text(sub):
+                return re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub).replace(">","").replace("&gt;",""))
+            df["text_prep"] = df.apply(lambda row: preprocess_text(row['selftext']) if row.type == "RS" else preprocess_text(row['body']), axis=1)
+        else:
+            df["text_prep"] = df["text"]
+    except:
         df["text_prep"] = df["text"]
     return df
 
@@ -242,8 +245,11 @@ def fill_4chan(cursor, connection):
                     connection.rollback()  # Roll back on error
 
 def fill_reddit(cursor, connection):
-    def create_reddit_url(row):
-        return "".join(["reddit.com/r/", str(row['subreddit']), "/comments/", str(row['parent_id']), "/comment/", str(row['id'])])
+    def create_reddit_url(input_row):
+        if input_row.type == "RC":
+            return "".join(["reddit.com/r/", str(input_row['subreddit']), "/comments/", str(input_row['parent_id']), "/comment/", str(input_row['id'])])
+        elif input_row.type == "RS":
+            return "".join(["reddit.com", str(input_row['permalink'])])
     
     regex_lang = r"_reddit_([^_]*)"
     
@@ -252,56 +258,61 @@ def fill_reddit(cursor, connection):
 
     path_liwc = "".join([BASE_PATH, "3_EN_culturepaper_LIWC/reddit_testdata_prep_liwc.csv"])
     liwc_df = get_df(path_liwc)
-    liwc_red = liwc_df[['permalink', 'Segment', 'WC', 'BigWords', 'prep', 'allnone', 'cogproc', 'insight', 'cause', 'discrep', 'tentat', 'certitude', 'differ', 'emotion', 'emo_pos', 'emo_neg', 'emo_anx', 'emo_anger', 'emo_sad']]
+    liwc_df['url'] = liwc_df.apply(create_reddit_url, axis=1)
+    liwc_red = liwc_df[['url','Segment', 'WC', 'BigWords', 'prep', 'allnone', 'cogproc', 'insight', 'cause', 'discrep', 'tentat', 'certitude', 'differ', 'emotion', 'emo_pos', 'emo_neg', 'emo_anx', 'emo_anger', 'emo_sad']]
 
     content_data = []
 
     for filepath in tqdm(all_files, total=len(all_files)):
         language = "ger" if re.search(regex_lang, filepath).group(1) == "de" else "eng"
 
-        chunksize = 10 ** 4
+        chunksize = 10 ** 3
         enc = get_encoding(filepath)
-        with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, low_memory=False, on_bad_lines="warn") as reader:
-            for chunk in reader:
-                # apply preprocessing to chunk
-                prepped_chunk = preprocess_text("reddit", chunk)
-                print(f"shape chunk: {prepped_chunk.shape}, shape liwc: {liwc_red.shape}")
-                liwc_red = liwc_red[liwc_red['permalink'].isin(prepped_chunk['permalink'])]
-                print(f"shape chunk: {prepped_chunk.shape}, shape liwc: {liwc_red.shape}")
-                write_chunk = pd.merge(prepped_chunk, liwc_red, on=['permalink'], how="left")
-                # write to db
+        try:
+            with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, low_memory=False, on_bad_lines="warn") as reader:
+                for chunk in reader:
+                    # apply preprocessing to chunk
+                    prepped_chunk = preprocess_text("reddit", chunk)
+                    prepped_chunk['url'] = prepped_chunk.apply(create_reddit_url, axis=1)
+                    liwc_red = liwc_red[liwc_red['url'].isin(prepped_chunk['url'])]
+                    write_chunk = pd.merge(prepped_chunk, liwc_red, on=['url'], how="left")
+                    # write to db
 
-                for index, row in write_chunk.iterrows():
-                    if row.type == "RC": # reddit comment
-                        info_tuple_legacy = (row['author'], row['id'], row['parent_id'], row['link_id'], row['searchterm'], row['terms'], "RC", row['terms'])
-                    else: # reddit submission
-                        info_tuple_legacy = (row['author'], row['id'], None, row['parent_id'],  row['searchterm'], row['terms'], "RS", create_reddit_url(row))
-                    
-                    try:
-                        cursor.execute("""
-                        INSERT INTO author, post_id, link_id, parent_id, searchterm, selftext, terms, type, url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        RETURNING id;
-                        """, info_tuple_legacy)
-                        alt_news_id = cursor.fetchone()[0]
-                        connection.commit()
-
-                        label_consp_id = fill_consp_label(cursor, connection, row)
-                        label_liwc_id = fill_liwc_label(cursor, connection, row) 
-                        # reddit comment
-                        if row.type == "RC":
-                            info_tuple_content = (row['time_utc'], row['created_utc'], row['body'], row["text_prep"], None, 'reddit', row['subreddit'], language, 
-                                                alt_news_id, label_liwc_id, label_consp_id)
+                    for index, row in write_chunk.iterrows():
+                        searchterm = None if ('searchterm') not in row or (pd.isna(row['searchterm'])) else row['searchterm']
+                        if row.type == "RC": # reddit comment
+                            info_tuple = (row['author'], row['id'], row['link_id'], row['parent_id'], searchterm, None, row['terms'], "RC", row['url'])
                         else: # reddit submission
-                            info_tuple_content = (row['time_utc'], row['created_utc'], row['selftext'], row["text_prep"], row['title'], 'reddit', row['subreddit'], language, 
-                                                alt_news_id, label_liwc_id, label_consp_id)
+                            info_tuple = (row['author'], row['id'], None, row['parent_id'],  searchterm, row['selftext'], row['terms'], "RS", row['url'])
+                        
+                        try:
+                            cursor.execute("""
+                            INSERT INTO reddit (author, post_id, link_id, parent_id, searchterm, selftext, terms, type, url)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            RETURNING id;
+                            """, info_tuple)
+                            alt_news_id = cursor.fetchone()[0]
+                            connection.commit()
 
-                        content_data.append(info_tuple_content)
-        
-                    except Exception as e:
-                        connection.rollback()  # Roll back on error
-                        add_to_log("reddit", f"Post insertion error: {e}\n")
-                    
+                            label_consp_id = fill_consp_label(cursor, connection, row)
+                            label_liwc_id = fill_liwc_label(cursor, connection, row) 
+                            # reddit comment
+                            if row.type == "RC":
+                                info_tuple_content = (row['time_utc'], row['created_utc'], row['body'], row["text_prep"], None, 'reddit', row['subreddit'], language, 
+                                                    alt_news_id, label_liwc_id, label_consp_id)
+                            else: # reddit submission
+                                info_tuple_content = (row['time_utc'], row['created_utc'], row['selftext'], row["text_prep"], row['title'], 'reddit', row['subreddit'], language, 
+                                                    alt_news_id, label_liwc_id, label_consp_id)
+
+                            content_data.append(info_tuple_content)
+            
+                        except Exception as e:
+                            connection.rollback()  # Roll back on error
+                            print(row)
+                            print(str(e))
+                            add_to_log("reddit", f"Post insertion error: {e}\n")
+        except Exception as e:
+            print(f"Error processing file {filepath}: {e}")
     try:
         fill_content(content_data, cursor)
         connection.commit()
@@ -385,16 +396,19 @@ def fill_tweets(cursor, connection):
 def fill_liwc_tweets(cursor, connection):
     def detect_lang(text):
         language_mapping = {"en": "eng","de": "ger"}
-        lang_code = detect(text)
         try:
-            return language_mapping[lang_code]
+            lang_code = detect(text)
+            try:
+                return language_mapping[lang_code]
+            except:
+                return lang_code
         except:
-            return lang_code
+            return "eng"
 
     path_liwc = "".join([BASE_PATH, "/3_EN_culturepaper_LIWC/kilian_testweeks_r1full_r2call_en_fi_prep_new_liwc.csv"])
 
     try:
-        for chunk in pd.read_csv(path_liwc, chunksize=chunk_size):
+        for chunk in pd.read_csv(path_liwc, chunksize=10 ** 4):
             content_data = []
             clean_chunk = clean_table_cols(chunk)
             write_chunk = preprocess_text("twitter", clean_chunk)
