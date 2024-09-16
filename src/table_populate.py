@@ -4,6 +4,8 @@ import sys
 import pandas as pd
 import datetime
 import pytz
+from tqdm import tqdm
+from langdetect import detect
 from decouple import Config, RepositoryEnv
 from .file_utils import get_valid_filepaths, get_df, add_to_log, get_encoding, clean_table_cols
 
@@ -13,23 +15,23 @@ BASE_PATH = config.get('BASE_PATH')
 csv.field_size_limit(sys.maxsize)
 
 def preprocess_text(platform, df):
-    if platform == "twitter":
-        df["text_prep"] = df["text"].apply(lambda sub: re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", sub)).apply(lambda sub: re.sub(r"(^|[^@\w])@(\w{1,15})\b", "", sub)).apply(lambda x: x.strip())
-    elif platform == "4chan":
-        df["text_prep"] = df["text.x"].apply(lambda sub: re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub).replace(">","").replace("&gt;","")))
-    elif platform == "legacy":
-        def preprocess_text(sub):
-            return re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub))
-        df['text_prep'] = df.apply(lambda row: preprocess_text(row['Text']) if 'ArticleID' in row and (not pd.isna(row['ArticleID'])) else preprocess_text(row['textonly']), axis=1)
-    elif platform == "reddit":
-        def preprocess_text(sub):
-            return re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub).replace(">","").replace("&gt;",""))
-        df["text_prep"] = df.apply(lambda row: preprocess_text(row['selftext']) if row.type == "RS" else preprocess_text(row['body']), axis=1)
-    else:
-        if "title" in df.columns:
-            df["text_prep"] = df["text"] + "\n" + df["title"]
+    try:
+        if platform == "twitter":
+            df["text_prep"] = df["text"].apply(lambda sub: re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", sub)).apply(lambda sub: re.sub(r"(^|[^@\w])@(\w{1,15})\b", "", sub)).apply(lambda x: x.strip())
+        elif platform == "4chan":
+            df["text_prep"] = df["text.x"].apply(lambda sub: re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub).replace(">","").replace("&gt;","")))
+        elif platform == "legacy":
+            def preprocess_text(sub):
+                return re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub))
+            df['text_prep'] = df.apply(lambda row: preprocess_text(row['Text']) if 'ArticleID' in row and (not pd.isna(row['ArticleID'])) else preprocess_text(row['textonly']), axis=1)
+        elif platform == "reddit":
+            def preprocess_text(sub):
+                return re.sub(r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", "", str(sub).replace(">","").replace("&gt;",""))
+            df["text_prep"] = df.apply(lambda row: preprocess_text(row['selftext']) if row.type == "RS" else preprocess_text(row['body']), axis=1)
         else:
-            result = text
+            df["text_prep"] = df["text"]
+    except:
+        df["text_prep"] = df["text"]
     return df
 
 def fill_content(input_data, cursor):
@@ -75,20 +77,24 @@ def fill_altnews(cursor, connection):
     
     alt_news_path= "".join([BASE_PATH, "0_Full_Data_Classified/AlternativeMedia/"])
     all_files = get_valid_filepaths(alt_news_path)
-    all_files = [filepath for filepath in all_files if "compact" not in filepath]
 
     path_liwc = "".join([BASE_PATH, "/3_EN_culturepaper_LIWC/en_alt_testdata_prep_liwc.csv"])
     liwc_df = get_df(path_liwc)
     liwc_red = liwc_df[['url', 'Segment', 'WC', 'BigWords', 'prep', 'allnone', 'cogproc', 'insight', 'cause', 'discrep', 'tentat', 'certitude', 'differ', 'emotion', 'emo_pos', 'emo_neg', 'emo_anx', 'emo_anger', 'emo_sad']]
 
     content_data = []
-    for filepath in all_files:
+    for filepath in tqdm(all_files, total=len(all_files)):
         subplatform = re.search(regex_subplat, filepath).group(2)
         language = re.search(regex_lang, filepath).group(1)
         df = get_df(filepath)
         clean_df = clean_table_cols(df)
         prepped_df = preprocess_text("altnews", clean_df)
         write_df = pd.merge(prepped_df, liwc_red, on='url', how="left")
+
+        if "compact" in filepath:
+            write_df['formatted_title'] = write_df['title'].str.lower().str.replace(' ', '-')
+            write_df['url'] = write_df['date'] + '/' + df['formatted_title']
+
         
         for index, row in write_df.iterrows():
             if not pd.isna(row['date']):
@@ -110,14 +116,14 @@ def fill_altnews(cursor, connection):
 
                 except Exception as e:
                     connection.rollback()  # Roll back on error
-                    add_to_log("alt_news", "Post insertion error: {e}")
+                    add_to_log("alt_news", f"Post insertion error: {e}\n")
             
     try:
         fill_content(content_data, cursor)
         connection.commit()
     except Exception as e:
-            print(f"Error inserting Alternative News Content: {e}")
-            add_to_log("alt_news", "Content insertion error: {e}")
+            print(f"Error inserting Alternative News Content: {e}\n")
+            add_to_log("alt_news", f"Content insertion error: {e}\n")
             connection.rollback()  # Roll back on error
 
 def fill_legnews(cursor, connection):
@@ -133,7 +139,7 @@ def fill_legnews(cursor, connection):
 
     content_data = []
 
-    for filepath in all_files:
+    for filepath in tqdm(all_files, total=len(all_files)):
         language = "ger" if re.search(regex_lang, filepath).group(1) == "de" else "eng"
 
         chunksize = 10 ** 4
@@ -176,17 +182,16 @@ def fill_legnews(cursor, connection):
                         content_data.append(info_tuple_content)
         
                     except Exception as e:
-                        print(f"Error inserting Legacy News Post: {e}")
                         connection.rollback()  # Roll back on error
     
-                        add_to_log("legacy_news", f"Post insertion error: {e}")
+                        add_to_log("legacy_news", f"Post insertion error: {e}\n")
                     
     try:
         fill_content(content_data, cursor)
         connection.commit()
     except Exception as e:
-            print(f"Error inserting Legacy News Content: {e}")
-            add_to_log("leg_news", f"Content insertion error: {e}")
+            print(f"Error inserting Legacy News Content: {e}\n")
+            add_to_log("leg_news", f"Content insertion error: {e}\n")
             connection.rollback()  # Roll back on error
 
 def fill_4chan(cursor, connection): 
@@ -228,22 +233,23 @@ def fill_4chan(cursor, connection):
                                      alt_news_id, label_liwc_id, label_consp_id))
     
                 except Exception as e:
-                    print(f"Error inserting 4chan Post: {e}")
                     connection.rollback()  # Roll back on error
 
-                    add_to_log("4chan", f"Post insertion error: {e}")
+                    add_to_log("4chan", f"Post insertion error: {e}\n")
                 
             try:
                 fill_content(content_data, cursor)
                 connection.commit()
             except Exception as e:
-                    print(f"Error inserting 4chan Content: {e}")
-                    add_to_log("4chan", f"Content insertion error: {e}")
+                    add_to_log("4chan", f"Content insertion error: {e}\n")
                     connection.rollback()  # Roll back on error
 
 def fill_reddit(cursor, connection):
-    def create_reddit_url(row):
-        return "".join(["reddit.com/r/", str(row['subreddit']), "/comments/", str(row['parent_id']), "/comment/", str(row['id'])])
+    def create_reddit_url(input_row):
+        if input_row.type == "RC":
+            return "".join(["reddit.com/r/", str(input_row['subreddit']), "/comments/", str(input_row['parent_id']), "/comment/", str(input_row['id'])])
+        elif input_row.type == "RS":
+            return "".join(["reddit.com", str(input_row['permalink'])])
     
     regex_lang = r"_reddit_([^_]*)"
     
@@ -252,61 +258,66 @@ def fill_reddit(cursor, connection):
 
     path_liwc = "".join([BASE_PATH, "3_EN_culturepaper_LIWC/reddit_testdata_prep_liwc.csv"])
     liwc_df = get_df(path_liwc)
-    liwc_red = liwc_df[['permalink', 'Segment', 'WC', 'BigWords', 'prep', 'allnone', 'cogproc', 'insight', 'cause', 'discrep', 'tentat', 'certitude', 'differ', 'emotion', 'emo_pos', 'emo_neg', 'emo_anx', 'emo_anger', 'emo_sad']]
+    liwc_df['url'] = liwc_df.apply(create_reddit_url, axis=1)
+    liwc_red = liwc_df[['url','Segment', 'WC', 'BigWords', 'prep', 'allnone', 'cogproc', 'insight', 'cause', 'discrep', 'tentat', 'certitude', 'differ', 'emotion', 'emo_pos', 'emo_neg', 'emo_anx', 'emo_anger', 'emo_sad']]
 
     content_data = []
 
-    for filepath in all_files:
+    for filepath in tqdm(all_files, total=len(all_files)):
         language = "ger" if re.search(regex_lang, filepath).group(1) == "de" else "eng"
 
         chunksize = 10 ** 3
         enc = get_encoding(filepath)
-        with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, low_memory=False) as reader:
-            for chunk in reader:
-                # apply preprocessing to chunk
-                prepped_chunk = preprocess_text("reddit", chunk)
-                write_chunk = pd.merge(prepped_chunk, liwc_red, on=['permalink'], how="left")
-                # write to db
+        try:
+            with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, low_memory=False, on_bad_lines="warn") as reader:
+                for chunk in reader:
+                    # apply preprocessing to chunk
+                    prepped_chunk = preprocess_text("reddit", chunk)
+                    prepped_chunk['url'] = prepped_chunk.apply(create_reddit_url, axis=1)
+                    liwc_red = liwc_red[liwc_red['url'].isin(prepped_chunk['url'])]
+                    write_chunk = pd.merge(prepped_chunk, liwc_red, on=['url'], how="left")
+                    # write to db
 
-                for index, row in write_chunk.iterrows():
-                    if row.type == "RC": # reddit comment
-                        info_tuple_legacy = (row['author'], row['id'], row['parent_id'], row['link_id'], row['searchterm'], row['terms'], "RC", row['terms'])
-                    else: # reddit submission
-                        info_tuple_legacy = (row['author'], row['id'], None, row['parent_id'],  row['searchterm'], row['terms'], "RS", create_reddit_url(row))
-                    
-                    try:
-                        cursor.execute("""
-                        INSERT INTO author, post_id, link_id, parent_id, searchterm, selftext, terms, type, url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        RETURNING id;
-                        """, info_tuple_legacy)
-                        alt_news_id = cursor.fetchone()[0]
-                        connection.commit()
-
-                        label_consp_id = fill_consp_label(cursor, connection, row)
-                        label_liwc_id = fill_liwc_label(cursor, connection, row) 
-                        # reddit comment
-                        if row.type == "RC":
-                            info_tuple_content = (row['time_utc'], row['created_utc'], row['body'], row["text_prep"], None, 'reddit', row['subreddit'], language, 
-                                                alt_news_id, label_liwc_id, label_consp_id)
+                    for index, row in write_chunk.iterrows():
+                        searchterm = None if ('searchterm') not in row or (pd.isna(row['searchterm'])) else row['searchterm']
+                        if row.type == "RC": # reddit comment
+                            info_tuple = (row['author'], row['id'], row['link_id'], row['parent_id'], searchterm, None, row['terms'], "RC", row['url'])
                         else: # reddit submission
-                            info_tuple_content = (row['time_utc'], row['created_utc'], row['selftext'], row["text_prep"], row['title'], 'reddit', row['subreddit'], language, 
-                                                alt_news_id, label_liwc_id, label_consp_id)
+                            info_tuple = (row['author'], row['id'], None, row['parent_id'],  searchterm, row['selftext'], row['terms'], "RS", row['url'])
+                        
+                        try:
+                            cursor.execute("""
+                            INSERT INTO reddit (author, post_id, link_id, parent_id, searchterm, selftext, terms, type, url)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            RETURNING id;
+                            """, info_tuple)
+                            alt_news_id = cursor.fetchone()[0]
+                            connection.commit()
 
-                        content_data.append(info_tuple_content)
-        
-                    except Exception as e:
-                        print(f"Error inserting Reddit Post: {e}")
-                        connection.rollback()  # Roll back on error
-    
-                        add_to_log("reddit", f"Post insertion error: {e}")
-                    
+                            label_consp_id = fill_consp_label(cursor, connection, row)
+                            label_liwc_id = fill_liwc_label(cursor, connection, row) 
+                            # reddit comment
+                            if row.type == "RC":
+                                info_tuple_content = (row['time_utc'], row['created_utc'], row['body'], row["text_prep"], None, 'reddit', row['subreddit'], language, 
+                                                    alt_news_id, label_liwc_id, label_consp_id)
+                            else: # reddit submission
+                                info_tuple_content = (row['time_utc'], row['created_utc'], row['selftext'], row["text_prep"], row['title'], 'reddit', row['subreddit'], language, 
+                                                    alt_news_id, label_liwc_id, label_consp_id)
+
+                            content_data.append(info_tuple_content)
+            
+                        except Exception as e:
+                            connection.rollback()  # Roll back on error
+                            print(row)
+                            print(str(e))
+                            add_to_log("reddit", f"Post insertion error: {e}\n")
+        except Exception as e:
+            print(f"Error processing file {filepath}: {e}")
     try:
         fill_content(content_data, cursor)
         connection.commit()
     except Exception as e:
-            print(f"Error inserting Reddit Content: {e}")
-            add_to_log("reddit", f"Content insertion error: {e}")
+            add_to_log("reddit", f"Content insertion error: {e}\n")
             connection.rollback()  # Roll back on error
 
 def fill_twitter(cursor, connection):
@@ -314,6 +325,7 @@ def fill_twitter(cursor, connection):
     fill_twitter_users(cursor, connection)
     print("Populating tweets...")
     fill_tweets(cursor, connection)
+    fill_liwc_tweets(cursor, connection)
 
 def fill_tweets(cursor, connection):
     def get_filtered_liwc(key_df, key_column, chunk_size=10 ** 4):
@@ -337,65 +349,123 @@ def fill_tweets(cursor, connection):
     tweets_path= "".join([BASE_PATH, "0_Full_Data_Classified/TwitterTweets/"])
     all_files = get_valid_filepaths(tweets_path)
 
-    content_data = []
-    for filepath in all_files:
-        language = "ger" if re.search(regex_lang, filepath).group(1) == "ger" else "eng"
-        df = get_df(filepath)
-        clean_df = clean_table_cols(df)
-        prepped_df = preprocess_text("twitter", clean_df)
-        liwc_red = get_filtered_liwc(prepped_df, "id")
-        write_df = pd.merge(prepped_df, liwc_red, on='url', how="left")
-        
-        for index, row in write_df.iterrows():
-            author = row['author'] if "author" in row else None
-            timestamp = row['timestamp'] if "timestamp" in row else None
-            sampled = True
-            try:
-                cursor.execute("""
-                INSERT INTO twitter (tweet_id, ref, refid , author_id, sampled)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id;
-                """, (row['id'], row['refid'], row['id'], row['id'],sampled))
-                tweet_id = cursor.fetchone()[0]
-                connection.commit()
-                
-                label_consp_id = fill_consp_label(cursor, connection, row) 
-                label_liwc_id = fill_liwc_label(cursor, connection, row)
-                content_data.append((row['time'], row['time'], row['text'], None, row["text_prep"], 'twitter', None, language, 
-                                     tweet_id, label_liwc_id, label_consp_id))
+    chunksize = 10 ** 4
+    for filepath in tqdm(all_files, total=len(all_files)):
+        enc = get_encoding(filepath)
+        try:
+            language = "ger" if re.search(regex_lang, filepath).group(1) == "ger" else "eng"
+            with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, engine='python') as reader:
+                for chunk in reader:
+                    content_data = []
+                    clean_chunk = clean_table_cols(chunk)
+                    prepped_chunk = preprocess_text("twitter", clean_chunk)
+                    liwc_red = get_filtered_liwc(prepped_chunk, "id")                    
+                    write_chunk = pd.merge(prepped_chunk, liwc_red, on='id', how="left")
+                    
+                    for index, row in write_chunk.iterrows():
+                        if not pd.isna(row['author']):
+                            timestamp = row['timestamp'] if "timestamp" in row else None
+                            sampled = False
+                            try:
+                                cursor.execute("""
+                                INSERT INTO twitter (tweet_id, ref, refid , author_id, sampled)
+                                VALUES (%s, %s, %s, %s, %s)
+                                RETURNING id;
+                                """, (row['id'], row['ref'], row['refid'], row['author'],sampled))
+                                tweet_id = cursor.fetchone()[0]
+                                connection.commit()
+                                
+                                label_consp_id = fill_consp_label(cursor, connection, row) 
+                                label_liwc_id = fill_liwc_label(cursor, connection, row)
+                                content_data.append((row['time'], row['time'], row['text'], None, row["text_prep"], 'twitter', None, language, 
+                                                    tweet_id, label_liwc_id, label_consp_id))
+                            except Exception as e:
+                                connection.rollback()  # Roll back on error
+                                add_to_log("twitter", f"Post insertion error: {e}\n")
+                    
+                    try:
+                        fill_content(content_data, cursor)
+                        connection.commit()
+                    except Exception as e:
+                            add_to_log("twitter", f"Content insertion error: {e}\n")
+                            connection.rollback()  # Roll back on error
+        except Exception as e:
+            print(f"Error during file handling: {e}\n")
+            add_to_log("twitter", f"Error during file handling: {e}\n")
 
-            except Exception as e:
-                print(f"Error inserting Twitter Post: {e}")
-                connection.rollback()  # Roll back on error
-                add_to_log("twitter", f"Post insertion error: {e}")
-            
+def fill_liwc_tweets(cursor, connection):
+    def detect_lang(text):
+        language_mapping = {"en": "eng","de": "ger"}
+        try:
+            lang_code = detect(text)
+            try:
+                return language_mapping[lang_code]
+            except:
+                return lang_code
+        except:
+            return "eng"
+
+    path_liwc = "".join([BASE_PATH, "/3_EN_culturepaper_LIWC/kilian_testweeks_r1full_r2call_en_fi_prep_new_liwc.csv"])
+
     try:
-        fill_content(content_data, cursor)
-        connection.commit()
+        for chunk in pd.read_csv(path_liwc, chunksize=10 ** 4):
+            content_data = []
+            clean_chunk = clean_table_cols(chunk)
+            write_chunk = preprocess_text("twitter", clean_chunk)
+            write_chunk['lang'] = write_chunk['text'].apply(detect_lang)
+            
+            for index, row in write_chunk.iterrows():
+                if not pd.isna(row['author']):
+                    timestamp = row['timestamp'] if "timestamp" in row else None
+                    sampled = True
+                    try:
+                        cursor.execute("""
+                        INSERT INTO twitter (tweet_id, ref, refid , author_id, sampled)
+                        VALUES (%s, %s, %s, %s, %s)
+                        RETURNING id;
+                        """, (row['id'], row['ref'], row['refid'], row['author'],sampled))
+                        tweet_id = cursor.fetchone()[0]
+                        connection.commit()
+                        
+                        label_consp_id = None
+                        label_liwc_id = fill_liwc_label(cursor, connection, row)
+                        content_data.append((row['time'], row['time'], row['text'], None, row["text_prep"], 'twitter', None, row['lang'], 
+                                            tweet_id, label_liwc_id, label_consp_id))
+                    except Exception as e:
+                        connection.rollback()  # Roll back on error
+                        add_to_log("twitter", f"Post insertion error: {e}\n")
+            
+            try:
+                fill_content(content_data, cursor)
+                connection.commit()
+            except Exception as e:
+                    add_to_log("twitter", f"Content insertion error: {e}\n")
+                    connection.rollback()  # Roll back on error
     except Exception as e:
-            print(f"Error inserting Twitter Content: {e}")
-            add_to_log("twitter", f"Content insertion error: {e}")
-            connection.rollback()  # Roll back on error
+        print(f"Error during file handling: {e}\n")
+        add_to_log("twitter", f"Error during file handling: {e}\n")
+
+    
 
 def fill_twitter_users(cursor, connection):
     tweets_path= "".join([BASE_PATH, "0_Full_Data_Classified/TwitterUsernames/"])
     all_files = get_valid_filepaths(tweets_path)
 
-    for filepath in all_files:
-        df = pd.read_csv(all_files[0], header=None, index_col=0, names=['author_id','username'])
-        input_data = list(df.itertuples(index=False, name=None))
-
+    for filepath in tqdm(all_files, total=len(all_files)):
         try:
-            cursor.executemany("""
-            INSERT INTO twitter_user (author_id, username)
-            VALUES (%s, %s)
-            ON CONFLICT DO NOTHING;
-            """, (input_data))
+            df = pd.read_csv(all_files[0], header=None, index_col=0, names=['author_id','username'])
             
-            connection.commit()
+            for index, row in df.iterrows():
+                try:
+                    cursor.execute("""
+                    INSERT INTO twitter_user (author_id, username)
+                    VALUES (%s, %s);
+                    """, ((row['author_id'],row['username'])))
+                    
+                    connection.commit()
 
+                except Exception as e:
+                        connection.rollback()  # Roll back on error
+                        add_to_log("twitter_user", f"User insertion error: {e}\n")
         except Exception as e:
-                print(f"Error inserting Twitter User: {e}")
-                connection.rollback()  # Roll back on error
-                msg = "\n".join([f"User insertion error :{e}"])
-                add_to_log("twitter_user", f"Post insertion error: {e}")
+            add_to_log("twitter_user", f"Error during file handling: {e}\n")
