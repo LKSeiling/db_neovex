@@ -12,7 +12,8 @@ warnings.simplefilter(action='ignore', category=UserWarning)
 class NEOVEXQueryWrapper:
     def __init__(self, dbname, user, password, host, port=5432, 
     label_inclusion=None, label_exclusion=None, platform=None, subplatform=None,
-    string_match=None, language=None, daterange=None, author=None):
+    search_text = "all", string_match=None, case_sensitivity=False, language=None, 
+    daterange=None, author=None):
         """
         Initialize the DatabaseWrapper with connection details.
 
@@ -35,6 +36,8 @@ class NEOVEXQueryWrapper:
             'label_exclusion': label_exclusion,
             'platform': None,
             'subplatform': None,
+            'search_text' : "all",
+            'case_sensitivity': case_sensitivity,
             'string_match': string_match,
             'language': language,
             'daterange': daterange,
@@ -46,7 +49,7 @@ class NEOVEXQueryWrapper:
 
     def set_label_inclusion(self, labels):
         """
-        Set labels for inclusion in the query.
+        Set labels for inclusion in the query. Currently only "liwc" or "consp" are accepted.
 
         :param labels: List of labels to include
         """
@@ -56,7 +59,7 @@ class NEOVEXQueryWrapper:
 
     def set_label_exclusion(self, labels):
         """
-        Set labels for exclusion in the query.
+        Set labels for exclusion in the query. Currently only "liwc" or "consp" are accepted.
 
         :param labels: List of labels to exclude
         """
@@ -66,7 +69,8 @@ class NEOVEXQueryWrapper:
 
     def set_platform(self, platform):
         """
-        Set the platform for the query.
+        Set the platform for the query. Currently only "alt_news" (alternative news), "leg_news" (legay news),
+        "4chan", "reddit", and "twitter" are allowed.
 
         :param platform: Platform name
         """
@@ -81,6 +85,22 @@ class NEOVEXQueryWrapper:
         :param subplatform: Subplatform name
         """
         self.criteria['subplatform'] = subplatform
+
+    def set_search_text(self, search_text):
+        """
+        Set the search_text setting, which determines the columns which should be searched for a string match. Currently only "all", "text" or "title" are accepted. The default is "all".
+
+        :param search_text: Search_text setting
+        """
+        self.criteria['search_text'] = search_text
+
+    def set_case_sensitivity(self, case_sensitivity):
+        """
+        Set the case_sensitivity setting, which determines if the string match should be case sensitive. The default is False (not case-sensitive).
+
+        :param case_sensitivity: Case_sensitivity setting
+        """
+        self.criteria['case_sensitivity'] = case_sensitivity
 
     def set_string_match(self, match_string):
         """
@@ -160,7 +180,21 @@ class NEOVEXQueryWrapper:
                     sql.SQL(',').join(map(sql.Literal, self.criteria['subplatform']))
                 )
         if self.criteria['string_match']:
-            query += sql.SQL(" AND text ILIKE {}").format(sql.Literal(f"%{self.criteria['string_match']}%"))
+            string_match = self.criteria['string_match']
+            match_operator = "LIKE" if self.criteria['case_sensitivity'] else "ILIKE"
+            if self.criteria['search_text'] == "all":
+                query += sql.SQL(f" AND (text {match_operator} {{}} OR text_prep {match_operator} {{}} OR title {match_operator} {{}})").format(
+                    sql.Literal(f"%{string_match}%"),
+                    sql.Literal(f"%{string_match}%"),
+                    sql.Literal(f"%{string_match}%")
+                )
+            elif self.criteria['search_text'] == "title":
+                query += sql.SQL(f" AND title {match_operator} {{}}").format(sql.Literal(f"%{string_match}%"))
+            elif self.criteria['search_text'] == "text":
+                query += sql.SQL(f" AND (text {match_operator} {{}} OR text_prep {match_operator} {{}})").format(
+                    sql.Literal(f"%{string_match}%"),
+                    sql.Literal(f"%{string_match}%")
+                )
         if self.criteria['language']:
             query += sql.SQL(" AND language = {}").format(sql.Literal(self.criteria['language']))
         if self.criteria['daterange']:
@@ -176,6 +210,14 @@ class NEOVEXQueryWrapper:
         Checks if the query meets the minimal criteria to be valid and throws an assertion error otherwise.
         """
 
+        if self.criteria['platform']:
+            allowed_platforms = ["alt_news","leg_news","4chan", "reddit","twitter"]
+            if len(self.criteria['platform']) == 1:
+                assert self.criteria['platform'] in allowed_platforms
+            elif len(self.criteria['platform']) > 1:
+                for platform in self.criteria['platform']:
+                    assert platform in allowed_platforms
+
         if self.criteria['label_exclusion']:
             assert type(self.criteria['label_exclusion']) == list
             assert "liwc" in self.criteria['label_exclusion'] or "consp" in self.criteria['label_exclusion']
@@ -183,6 +225,11 @@ class NEOVEXQueryWrapper:
         if self.criteria['label_inclusion']:
             assert type(self.criteria['label_inclusion']) == list
             assert "liwc" in self.criteria['label_inclusion'] or "consp" in self.criteria['label_inclusion']
+        
+        if self.criteria['string_match']:
+            assert self.criteria['search_text'] in ['all', 'text', 'title']
+
+        assert type(self.criteria['case_sensitivity']) == bool
 
     def construct_query(self):
         """
