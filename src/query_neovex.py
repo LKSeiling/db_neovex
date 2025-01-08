@@ -69,7 +69,7 @@ class NEOVEXQueryWrapper:
 
     def set_platform(self, platform):
         """
-        Set the platform for the query. Currently only "alt_news" (alternative news), "leg_news" (legay news),
+        Set the platform for the query. Currently only "alt_news" (alternative news), "legacy_news",
         "4chan", "reddit", and "twitter" are allowed.
 
         :param platform: Platform name
@@ -201,7 +201,42 @@ class NEOVEXQueryWrapper:
             start_date, end_date = self.criteria['daterange']
             query += sql.SQL(" AND date BETWEEN {} AND {}").format(sql.Literal(start_date), sql.Literal(end_date))
         if self.criteria['author']:
-            query += sql.SQL(" AND author = {}").format(sql.Literal(self.criteria['author']))
+            author_name = self.criteria['author']
+            platform = self.criteria.get('platform', [])
+
+            author_condition = sql.SQL(" AND (")
+            subconditions = []
+
+            if platform==None or 'twitter' in platform:
+                subconditions.append(sql.SQL("""
+                    (platform = 'twitter' AND EXISTS (
+                        SELECT 1
+                        FROM twitter t
+                        JOIN twitter_user tu ON t.author_id = tu.author_id
+                        WHERE t.id = content.content_id AND tu.username = {}
+                    ))
+                """).format(sql.Literal(author_name)))
+
+            for p in ['alt_news', 'legacy_news', '4chan', 'reddit']:
+                if platform==None or p in platform:
+                    p_table = p if p!="4chan" else "fourchan"
+                    subconditions.append(sql.SQL("""
+                        (platform = {} AND EXISTS (
+                            SELECT 1
+                            FROM {} p
+                            WHERE p.id = content.content_id AND p.author = {}
+                        ))
+                    """).format(
+                        sql.Literal(p),
+                        sql.Identifier(p_table),
+                        sql.Literal(author_name)
+                    ))
+
+            if subconditions:
+                author_condition += sql.SQL(" OR ").join(subconditions)
+                author_condition += sql.SQL(")")
+
+            query += author_condition
 
         return query
 
@@ -211,7 +246,7 @@ class NEOVEXQueryWrapper:
         """
 
         if self.criteria['platform']:
-            allowed_platforms = ["alt_news","leg_news","4chan", "reddit","twitter"]
+            allowed_platforms = ["alt_news","legacy_news","4chan", "reddit","twitter"]
             if len(self.criteria['platform']) == 1:
                 assert self.criteria['platform'] in allowed_platforms
             elif len(self.criteria['platform']) > 1:
@@ -240,26 +275,34 @@ class NEOVEXQueryWrapper:
         query = sql.SQL("SELECT * FROM content") + self.build_base_query()
         return query
 
-    def query_db(self, sql_query):
+    def query_db(self, sql_query=None, str_query=None):
         """
-        Execute the constructed query and fetch all results.
+        Execute a query and fetch all results.
 
-        :return: List of query results
+        :param sql_query: Query constructed using the python sql package
+        :param str_query: passed directly as string
+
+        :return: Dataframe of query results
         """
-        with pg.connect("host='{}' port={} dbname='{}' user={} password={}".format(self.conn_dat['host'], self.conn_dat['port'], self.conn_dat['dbname'], self.conn_dat['user'], self.conn_dat['password'])) as conn:
-            dat = pd.read_sql_query(sql_query.as_string(conn), conn)
-            return dat
+        if sql_query:
+            with pg.connect("host='{}' port={} dbname='{}' user={} password={}".format(self.conn_dat['host'], self.conn_dat['port'], self.conn_dat['dbname'], self.conn_dat['user'], self.conn_dat['password'])) as conn:
+                print(sql_query.as_string(conn))
+                dat = pd.read_sql_query(sql_query.as_string(conn), conn)
+        elif str_query:
+            with pg.connect("host='{}' port={} dbname='{}' user={} password={}".format(self.conn_dat['host'], self.conn_dat['port'], self.conn_dat['dbname'], self.conn_dat['user'], self.conn_dat['password'])) as conn:
+                dat = pd.read_sql_query(str_query, conn)
+        return dat
     
     
     def execute_query(self):
         """
         Execute the constructed query and fetch all results.
 
-        :return: List of query results
+        :return: Dataframe of query results
         """
         self.check_query()
         query = self.construct_query()
-        return self.query_db(query)
+        return self.query_db(sql_query=query)
 
     def sum_rows(self, group_by=None):
         """
