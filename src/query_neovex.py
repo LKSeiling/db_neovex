@@ -132,15 +132,15 @@ class NEOVEXQueryWrapper:
         query = sql.SQL(" WHERE 1=1")
 
         if self.criteria['label_inclusion']:
-            if len(self.criteria['label_exclusion']) == 1:
-                query += sql.SQL(" AND {} IS NOT NULL").format(sql.Identifier(self.criteria['label_exclusion']))
+            if len(self.criteria['label_inclusion']) == 1:
+                query += sql.SQL(" AND {} IS NOT NULL").format(sql.Identifier(f"label_{self.criteria['label_inclusion'][0]}"))
             else:
-                for label in self.criteria['label_exclusion']:
+                for label in self.criteria['label_inclusion']:
                     column_name = f"label_{label}"
                     query += sql.SQL(" AND {} IS NOT NULL").format(sql.Identifier(column_name))
         if self.criteria['label_exclusion']:
             if len(self.criteria['label_exclusion']) == 1:
-                query += sql.SQL(" AND {} IS NULL").format(sql.Identifier(self.criteria['label_exclusion']))
+                query += sql.SQL(" AND {} IS NULL").format(sql.Identifier(f"label_{self.criteria['label_exclusion'][0]}"))
             else:
                 for label in self.criteria['label_exclusion']:
                     column_name = f"label_{label}"
@@ -171,6 +171,19 @@ class NEOVEXQueryWrapper:
 
         return query
 
+    def check_query(self):
+        """
+        Checks if the query meets the minimal criteria to be valid and throws an assertion error otherwise.
+        """
+
+        if self.criteria['label_exclusion']:
+            assert type(self.criteria['label_exclusion']) == list
+            assert "liwc" in self.criteria['label_exclusion'] or "consp" in self.criteria['label_exclusion']
+
+        if self.criteria['label_inclusion']:
+            assert type(self.criteria['label_inclusion']) == list
+            assert "liwc" in self.criteria['label_inclusion'] or "consp" in self.criteria['label_inclusion']
+
     def construct_query(self):
         """
         Construct the SQL query based on the set criteria.
@@ -197,6 +210,7 @@ class NEOVEXQueryWrapper:
 
         :return: List of query results
         """
+        self.check_query()
         query = self.construct_query()
         return self.query_db(query)
 
