@@ -1,6 +1,6 @@
 import re
 import csv
-import sys
+import sys, traceback
 import pandas as pd
 import datetime
 import pytz
@@ -84,6 +84,7 @@ def fill_altnews(cursor, connection):
 
     content_data = []
     for filepath in tqdm(all_files, total=len(all_files)):
+        content_data = []
         subplatform = re.search(regex_subplat, filepath).group(2)
         language = re.search(regex_lang, filepath).group(1)
         df = get_df(filepath)
@@ -118,13 +119,13 @@ def fill_altnews(cursor, connection):
                     connection.rollback()  # Roll back on error
                     add_to_log("alt_news", f"Post insertion error: {e}\n")
             
-    try:
-        fill_content(content_data, cursor)
-        connection.commit()
-    except Exception as e:
-            print(f"Error inserting Alternative News Content: {e}\n")
-            add_to_log("alt_news", f"Content insertion error: {e}\n")
-            connection.rollback()  # Roll back on error
+        try:
+            fill_content(content_data, cursor)
+            connection.commit()
+        except Exception as e:
+                print(f"Error inserting Alternative News Content: {e}\n")
+                add_to_log("alt_news", f"Content insertion error: {e}\n")
+                connection.rollback()  # Roll back on error
 
 def fill_legnews(cursor, connection):
     
@@ -250,6 +251,9 @@ def fill_reddit(cursor, connection):
             return "".join(["reddit.com/r/", str(input_row['subreddit']), "/comments/", str(input_row['parent_id']), "/comment/", str(input_row['id'])])
         elif input_row.type == "RS":
             return "".join(["reddit.com", str(input_row['permalink'])])
+
+    def unix_to_datetime(unix_timestamp):
+        return datetime.datetime.utcfromtimestamp(int(unix_timestamp))
     
     regex_lang = r"_reddit_([^_]*)"
     
@@ -261,7 +265,7 @@ def fill_reddit(cursor, connection):
     liwc_df['url'] = liwc_df.apply(create_reddit_url, axis=1)
     liwc_red = liwc_df[['url','Segment', 'WC', 'BigWords', 'prep', 'allnone', 'cogproc', 'insight', 'cause', 'discrep', 'tentat', 'certitude', 'differ', 'emotion', 'emo_pos', 'emo_neg', 'emo_anx', 'emo_anger', 'emo_sad']]
 
-    content_data = []
+    
 
     for filepath in tqdm(all_files, total=len(all_files)):
         language = "ger" if re.search(regex_lang, filepath).group(1) == "de" else "eng"
@@ -271,6 +275,7 @@ def fill_reddit(cursor, connection):
         try:
             with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, low_memory=False, on_bad_lines="warn") as reader:
                 for chunk in reader:
+                    content_data = []
                     # apply preprocessing to chunk
                     prepped_chunk = preprocess_text("reddit", chunk)
                     prepped_chunk['url'] = prepped_chunk.apply(create_reddit_url, axis=1)
@@ -279,46 +284,51 @@ def fill_reddit(cursor, connection):
                     # write to db
 
                     for index, row in write_chunk.iterrows():
-                        searchterm = None if ('searchterm') not in row or (pd.isna(row['searchterm'])) else row['searchterm']
-                        if row.type == "RC": # reddit comment
-                            info_tuple = (row['author'], row['id'], row['link_id'], row['parent_id'], searchterm, None, row['terms'], "RC", row['url'])
-                        else: # reddit submission
-                            info_tuple = (row['author'], row['id'], None, row['parent_id'],  searchterm, row['selftext'], row['terms'], "RS", row['url'])
-                        
-                        try:
-                            cursor.execute("""
-                            INSERT INTO reddit (author, post_id, link_id, parent_id, searchterm, selftext, terms, type, url)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            RETURNING id;
-                            """, info_tuple)
-                            alt_news_id = cursor.fetchone()[0]
-                            connection.commit()
-
-                            label_consp_id = fill_consp_label(cursor, connection, row)
-                            label_liwc_id = fill_liwc_label(cursor, connection, row) 
-                            # reddit comment
-                            if row.type == "RC":
-                                info_tuple_content = (row['time_utc'], row['created_utc'], row['body'], row["text_prep"], None, 'reddit', row['subreddit'], language, 
-                                                    alt_news_id, label_liwc_id, label_consp_id)
+                        if pd.notna(row.parent_id) and pd.notna(row.id):
+                            searchterm = None if ('searchterm') not in row or (pd.isna(row['searchterm'])) else row['searchterm']
+                            if row.type == "RC": # reddit comment
+                                info_tuple = (row['author'], row['id'], row['link_id'], row['parent_id'], searchterm, None, row['terms'], "RC", row['url'])
                             else: # reddit submission
-                                info_tuple_content = (row['time_utc'], row['created_utc'], row['selftext'], row["text_prep"], row['title'], 'reddit', row['subreddit'], language, 
-                                                    alt_news_id, label_liwc_id, label_consp_id)
+                                info_tuple = (row['author'], row['id'], None, row['parent_id'],  searchterm, row['selftext'], row['terms'], "RS", row['url'])
+                            
+                            try:
+                                cursor.execute("""
+                                INSERT INTO reddit (author, post_id, link_id, parent_id, searchterm, selftext, terms, type, url)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                RETURNING id;
+                                """, info_tuple)
+                                alt_news_id = cursor.fetchone()[0]
+                                connection.commit()
 
-                            content_data.append(info_tuple_content)
-            
-                        except Exception as e:
+                                label_consp_id = fill_consp_label(cursor, connection, row) if not pd.isna(row.label_pred) else None
+                                label_liwc_id = fill_liwc_label(cursor, connection, row) if not pd.isna(row.Segment) else None
+                                # reddit comment
+                                if row.type == "RC":
+                                    info_tuple_content = (row['time_utc'], unix_to_datetime(row['created_utc']), row['body'], row["text_prep"], None, 'reddit', row['subreddit'], language, 
+                                                        alt_news_id, label_liwc_id, label_consp_id)
+                                else: # reddit submission
+                                    info_tuple_content = (row['time_utc'], unix_to_datetime(row['created_utc']), row['selftext'], row["text_prep"], row['title'], 'reddit', row['subreddit'], language, 
+                                                        alt_news_id, label_liwc_id, label_consp_id)
+
+                                content_data.append(info_tuple_content)
+                
+                            except Exception as e:
+                                connection.rollback()  # Roll back on error
+                                print(str(e))
+                                traceback.print_exc(file=sys.stdout)
+                                print(str(e))
+                                add_to_log("reddit", f"Post insertion error: {e}\n")
+                        else:
+                            add_to_log("reddit", f"NaN values in id or parent id for:\n{row}\n")
+
+                    try:
+                        fill_content(content_data, cursor)
+                        connection.commit()
+                    except Exception as e:
+                            add_to_log("reddit", f"Content insertion error: {e}\n")
                             connection.rollback()  # Roll back on error
-                            print(row)
-                            print(str(e))
-                            add_to_log("reddit", f"Post insertion error: {e}\n")
         except Exception as e:
             print(f"Error processing file {filepath}: {e}")
-    try:
-        fill_content(content_data, cursor)
-        connection.commit()
-    except Exception as e:
-            add_to_log("reddit", f"Content insertion error: {e}\n")
-            connection.rollback()  # Roll back on error
 
 def fill_twitter(cursor, connection):
     print("Populating twitter users...")
