@@ -23,6 +23,18 @@ class NEOVEXQueryWrapper:
         :param password: User's password
         :param host: Host of the database, default is 'localhost'
         :param port: Port of the database, default is '5432'
+        :param label_inclusion:
+        :param label_exclusion:
+        :param platform: 
+        :param subplatform: 
+        :param search_text: 
+        :param string_match: 
+        :param case_sensitivity: 
+        :param language: 
+        :param daterange: 
+        :param author: 
+        :param merge_platform_data: 
+        :param merge_label_data:
         """
         self.conn_dat = {
             'dbname': dbname,
@@ -228,7 +240,7 @@ class NEOVEXQueryWrapper:
 
         assert type(self.criteria['case_sensitivity']) == bool
 
-    def build_base_query(self):
+    def build_base_query(self, custom_select=None):
         """
         Build the base SQL query based on the set criteria, including platform-specific and label-specific information if required.
 
@@ -236,7 +248,11 @@ class NEOVEXQueryWrapper:
         """
         join_clauses, selected_fields = self.add_platform_and_label_query()
 
-        select_clause = sql.SQL("SELECT {}").format(sql.SQL(", ").join(selected_fields))
+        if custom_select:
+            select_clause = custom_select
+        else:
+            select_clause = sql.SQL("SELECT {}").format(sql.SQL(", ").join(selected_fields))
+            
         from_clause = sql.SQL("FROM content")
 
         where_clause = sql.SQL(" WHERE 1=1")
@@ -412,26 +428,20 @@ class NEOVEXQueryWrapper:
             return input_query
 
     def sum_rows(self, group_by=None):
-        """
-        Execute the query and return the count of rows matching the criteria.
-        Optionally, group the results by a specified column.
-
-        :param group_by: Column name to group by (optional)
-        :return: DataFrame of counts, optionally grouped by the specified column
-        """
         if group_by:
             if isinstance(group_by, str):
                 group_by = [group_by]
             
             group_by_clause = sql.SQL(', ').join(map(sql.Identifier, group_by))
-            select_clause = sql.SQL(', ').join([group_by_clause, sql.SQL("COUNT(*)")])
-            
-            query = sql.SQL("SELECT {} FROM content").format(select_clause) + self.build_base_query()
+            custom_select = sql.SQL("SELECT {}, COUNT(*)").format(group_by_clause)
+            query = self.build_base_query(custom_select=custom_select)
             query += sql.SQL(" GROUP BY {}").format(group_by_clause)
         else:
-            query = sql.SQL("SELECT COUNT(*) FROM content") + self.build_base_query()
-
+            custom_select = sql.SQL("SELECT COUNT(*)")
+            query = self.build_base_query(custom_select=custom_select)
+        
         return self.query_db(query)
+
 
     def sum_per_time_unit(self, time_unit):
         """
@@ -440,7 +450,8 @@ class NEOVEXQueryWrapper:
         :param time_unit: Time unit for aggregation (e.g., 'MONTH', 'DAY')
         :return: List of tuples containing the time unit and count of rows
         """
-        query = self.build_base_query().replace(sql.SQL("SELECT *"), sql.SQL(f"SELECT {time_unit}(date), COUNT(*)"))
+        custom_select = sql.SQL(f"SELECT {time_unit}(date), COUNT(*)")
+        query = self.build_base_query(custom_select=custom_select)
         query += sql.SQL(" GROUP BY {}(date)").format(sql.Identifier(time_unit))
         return self.query_db(query)
 
