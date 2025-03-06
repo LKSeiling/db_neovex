@@ -72,6 +72,12 @@ def fill_liwc_label(cursor, connection, row):
     return label_liwc_id
 
 def fill_altnews(cursor, connection):  
+    def transform_timestamp(timestamp):
+        berlin_tz = pytz.timezone('Europe/Berlin')
+        parsed_date = datetime.strptime(f'20{timestamp}', '%Y-%m-%d')
+        berlin_time = berlin_tz.localize(parsed_date)
+        return berlin_time.strftime('%Y-%m-%d %H:%M:%S%z')
+
     regex_lang = r"\/AlternativeMedia\/([^\/]*)"
     regex_subplat = r"fi_(enc_)?([^_]+)_"
     
@@ -84,17 +90,21 @@ def fill_altnews(cursor, connection):
 
     content_data = []
     for filepath in tqdm(all_files, total=len(all_files)):
+        print(filepath)
         content_data = []
         subplatform = re.search(regex_subplat, filepath).group(2)
         language = re.search(regex_lang, filepath).group(1)
         df = get_df(filepath)
         clean_df = clean_table_cols(df)
         prepped_df = preprocess_text("altnews", clean_df)
-        write_df = pd.merge(prepped_df, liwc_red, on='url', how="left")
+        if language == "eng":
+            write_df = pd.merge(prepped_df, liwc_red, on='url', how="left")
+        else:
+            write_df = prepped_df.copy()
 
         if "compact" in filepath:
             write_df['formatted_title'] = write_df['title'].str.lower().str.replace(' ', '-')
-            write_df['url'] = write_df['date'] + '/' + df['formatted_title']
+            write_df['url'] = write_df['date'] + '/' + write_df['formatted_title']
 
         
         for index, row in write_df.iterrows():
@@ -111,9 +121,19 @@ def fill_altnews(cursor, connection):
                     connection.commit()
 
                     label_consp_id = fill_consp_label(cursor, connection, row)
-                    label_liwc_id = fill_liwc_label(cursor, connection, row)
-                    content_data.append((row['date'], timestamp, row['text'], row['title'], row["text_prep"], 'alt_news', subplatform, language, 
+
+                    if re.match(r'\d{2}-\d{2}-\d{2}',row['date']):
+                        date = transform_timestamp(row['date'])
+                    else:
+                        date = row['date']
+
+                    if language == "eng":
+                        label_liwc_id = fill_liwc_label(cursor, connection, row)
+                        content_data.append((date, timestamp, row['text'], row['title'], row["text_prep"], 'alt_news', subplatform, language, 
                                         alt_news_id, label_liwc_id, label_consp_id))
+                    else:
+                        content_data.append((date, timestamp, row['text'], row['title'], row["text_prep"], 'alt_news', subplatform, language, 
+                                        alt_news_id, None, label_consp_id))
 
                 except Exception as e:
                     connection.rollback()  # Roll back on error
