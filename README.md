@@ -17,7 +17,18 @@ pyenv local neovex
 python3.10 -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
-5. Start jupyter notebook server and open the queryDB notebook
+
+## Usage
+### Wiki
+Please take a look at the **[Wiki](https://github.com/LKSeiling/db_neovex/wiki)** to see the [API documentation](https://github.com/LKSeiling/db_neovex/wiki/API) as well as an [explanation of the examples]() which you can try yourself by running
+```
+jupyter notebook queryDB_examples.ipynb
+```
+
+The Wiki also includes information on the [structure of the underlying database](https://github.com/LKSeiling/db_neovex/wiki/Structure-of-NEOVEX-Database), which is relevant in case you want to crafting your own SQL queries.
+
+### Make your own queries
+To make your own queries, start a jupyter notebook server and open the queryDB notebook using
 ```
 jupyter notebook queryDB.ipynb
 ```
