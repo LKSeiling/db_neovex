@@ -222,7 +222,8 @@ def create_reddit_table(cursor, connection):
         selftext TEXT,
         terms TEXT,
         type VARCHAR(225),
-        url TEXT NOT NULL UNIQUE
+        url TEXT NOT NULL UNIQUE, 
+        coded BOOL
         );"""
         create_table(SQL_STATEMENT, cursor)
     except Exception as e:
