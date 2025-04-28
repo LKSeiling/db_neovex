@@ -1,4 +1,4 @@
-# Neovex Database
+# NEOVEX Database
 
 ## Setup 
 1. Clone directory
