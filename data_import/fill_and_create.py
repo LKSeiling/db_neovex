@@ -9,7 +9,7 @@ from importing_scripts.table_populate import fill_altnews, fill_legnews, fill_co
 csv.field_size_limit(sys.maxsize)
 
 
-config = Config(RepositoryEnv('./.env'))
+config = Config(RepositoryEnv('./../.env'))
 HOST = config.get('REMOTE_HOST')
 UNAME = config.get('UNAME')
 PW = config.get('PASSWORD')

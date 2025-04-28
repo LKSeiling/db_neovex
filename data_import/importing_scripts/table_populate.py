@@ -7,9 +7,9 @@ import pytz
 from tqdm import tqdm
 from langdetect import detect
 from decouple import Config, RepositoryEnv
-from .file_utils import get_valid_filepaths, get_df, add_to_log, get_encoding, clean_table_cols
+from importing_scripts.file_utils import get_valid_filepaths, get_df, add_to_log, get_encoding, clean_table_cols
 
-config = Config(RepositoryEnv('./.env'))
+config = Config(RepositoryEnv('./../.env'))
 BASE_PATH = config.get('BASE_PATH')
 
 csv.field_size_limit(sys.maxsize)
@@ -268,7 +268,7 @@ def fill_4chan(cursor, connection):
 def fill_reddit(cursor, connection):
     def create_reddit_url(input_row):
         if input_row.type == "RC":
-            return "".join(["reddit.com/r/", str(input_row['subreddit']), "/comments/", str(input_row['parent_id']), "/comment/", str(input_row['id'])])
+            return "".join(["reddit.com/r/", str(input_row['subreddit']), "/comments/", str(input_row['link_id']), "/comment/", str(input_row['id'])])
         elif input_row.type == "RS":
             return "".join(["reddit.com", str(input_row['permalink'])])
 
@@ -296,25 +296,27 @@ def fill_reddit(cursor, connection):
             with pd.read_csv(filepath, chunksize=chunksize, encoding=enc, low_memory=False, on_bad_lines="warn") as reader:
                 for chunk in reader:
                     content_data = []
+
+
                     # apply preprocessing to chunk
                     prepped_chunk = preprocess_text("reddit", chunk)
                     prepped_chunk['url'] = prepped_chunk.apply(create_reddit_url, axis=1)
                     liwc_red = liwc_red[liwc_red['url'].isin(prepped_chunk['url'])]
                     write_chunk = pd.merge(prepped_chunk, liwc_red, on=['url'], how="left")
-                    # write to db
 
                     for index, row in write_chunk.iterrows():
                         if pd.notna(row.parent_id) and pd.notna(row.id):
                             searchterm = None if ('searchterm') not in row or (pd.isna(row['searchterm'])) else row['searchterm']
+                            coded = True if "fi_condensed" in filepath and row['subreddit'] != "cringe" else False
+
                             if row.type == "RC": # reddit comment
-                                info_tuple = (row['author'], row['id'], row['link_id'], row['parent_id'], searchterm, None, row['terms'], "RC", row['url'])
+                                info_tuple = (row['author'], row['id'], row['link_id'], row['parent_id'], searchterm, None, row['terms'], "RC", row['url'], coded)
                             else: # reddit submission
-                                info_tuple = (row['author'], row['id'], None, row['parent_id'],  searchterm, row['selftext'], row['terms'], "RS", row['url'])
-                            
+                                info_tuple = (row['author'], row['id'], None, row['parent_id'],  searchterm, row['selftext'], row['terms'], "RS", row['url'], coded)
                             try:
                                 cursor.execute("""
-                                INSERT INTO reddit (author, post_id, link_id, parent_id, searchterm, selftext, terms, type, url)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                INSERT INTO reddit (author, post_id, link_id, parent_id, searchterm, selftext, terms, type, url, coded)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 RETURNING id;
                                 """, info_tuple)
                                 alt_news_id = cursor.fetchone()[0]
