@@ -1,4 +1,6 @@
-psycopg2
-pandas
-notebook
-python-decouple
+psycopg2==2.9.10
+pandas==2.2.3
+notebook==7.4.1
+python-decouple==3.8
+tqdm==4.67.1
+langdetect==1.0.9
